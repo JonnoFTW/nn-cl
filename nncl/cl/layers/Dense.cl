@@ -34,34 +34,3 @@ __kernel void dense_layer_backward(
 
 }
 
-/**
- * Special softmax layer
-**/
-
-__kernel void softmax_layer_forward(
-   __global float* input,   // input buffer
-   __global float* weights, // layer weights
-   __global float* biases,  // layer bias
-   __global float* output,  // output buffer
-    const int input_width   // input width
-) {
-
-    // calculate product + layer bias
-    const int gid = get_global_id(0);
-    // calculate the output for cell gid,
-    // output[gid] = weights[gid] *
-    const float weight = weights[gid];
-    float sum = biases[gid];
-    for(int i = 0; i < input_width; i++) {
-        sum += weight * input[i];
-    }
-    output[gid] = exp(sum);
-    barrier(CLK_GLOBAL_MEM_FENCE);
-    // calc the current sum of output
-    const int output_width = get_global_size(0);
-    float output_total = 0;
-    for(int i = 0; i < output_width; i++) {
-        output_total += output[i];
-    }
-    output[gid] /= output_total;
-}

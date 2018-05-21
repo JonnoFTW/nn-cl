@@ -8,7 +8,7 @@ class Loss:
         self.ctx = ctx
         self.make_reduction_krnl()
 
-    def __call__(self, y_true, y_pred, n):
+    def __call__(self, *args, **kwargs):
         raise NotImplementedError("Please use an actual loss")
 
     def make_reduction_krnl(self):
@@ -49,8 +49,8 @@ class CategoricalCrossentropy(Loss):
             name="categorical_crossentropy_reduction_kernel"
         )
 
-    def cpu(self, y_true, y_pred, n):
-        return -((y_true * np.log2(y_pred)).sum())
+    def cpu(self, y_true, y_pred, idx):
+        return -((y_true[idx].get() * np.log2(y_pred.get())).sum())
 
-    def __call__(self, y_true, y_pred, n):
-        return self.krnl(y_true, y_pred).get()
+    def __call__(self, y_true, y_pred, idx):
+        return self.krnl(y_true[idx], y_pred).get()

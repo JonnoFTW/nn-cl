@@ -2,6 +2,7 @@ import numpy as np
 import pyopencl as cl
 from pyopencl import array, cltypes
 from tqdm import tqdm
+from typing import List
 
 from nncl.layer import Layer
 from nncl.losses import Loss
@@ -16,38 +17,37 @@ class Network:
         else:
             self.ctx = ctx
         self.queue = cl.CommandQueue(ctx)
-        self.layers = []
+        self.layers: List[Layer] = []
 
     def add(self, layer: Layer):
         self.layers.append(layer)
 
-    def build(self):
-        pass
-
-    def forward(self, x):
+    def forward(self, x, idx):
         # put x in the buffer
-        buf = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=x)
-        size = x.shape[0]
+        size = self.layers[0].input_width
+        # can probably do better here
+        buf = x.get_sub_region(size * idx, size)
         for l in self.layers:
             # input_np = np.zeros(size, dtype=cltypes.float)
             # cl.enqueue_copy(self.queue, input_np, buf)
             # print("\nInput:  ", input_np)
-            buf = l(buf)
+            buf = l(buf).data
             # weights = l.get_weights().reshape(l.output_width, l.input_width)
             # output = l.get_output()
             # print("Weights:", weights)
             # print("Output: ", output)
             # print("Expected: ", np.tanh(weights.dot(input_np)))
             # print()
-            size = l.output_width
 
         # buf is now a pointer to the cl buffer of the output
         # should probably calculate the loss on the device
         # return the output of the last layer
-        return buf, size
+        return self.layers[-1].output
 
-    def backward(self, ):
-        pass
+    def backward(self, buf):
+
+        for l in self.layers[::-1]:
+            buf = l.backward(buf)
 
     def train(self, epochs: int, loss: Loss, optimizer, x_train, y_train, x_test, y_test, batch_size: int = 1):
         """
@@ -85,19 +85,26 @@ class Network:
         train_rows = x_train.shape[0]
         if train_rows % batch_size != 0:
             raise ValueError("Training dataset must have rows divisible by batch size")
-        input_features = x_train.shape[1]
-        output_features = y_train.shape[1]
+        input_features = cltypes.uint(x_train.shape[1])
+        output_features = cltypes.uint(y_train.shape[1])
         if input_features != self.layers[0].input_width:
             raise ValueError("Input features must be the same as layer_0 input width")
-        for i in tqdm(range(epochs), desc='Epoch: ', position=0):
-            for idx in tqdm(range(train_rows), desc='Row: ', position=1):
+        x_train_gpu = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=x_train)
+        # y_train_gpu_buf = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=y_train)
+        # y_train_gpu = array.Array(self.queue, y_train.shape, dtype=cltypes.float, data=y_train)
+        # x_train_gpu = array.Array(self.queue, data=y_train_gpu_buf, shape=y_train.shape, dtype=cltypes.float)
+
+        # should probably check that our data won't exceed available device memory,
+        # transparently queue up more data once it's been used
+        # get ~1685 row/s on pocl, intel i7-4770
+        y_train_gpu = array.to_device(self.queue, y_train)
+        # y_train_gpu_arr = array.Array(self.queue, y_train.size, cltypes.float, data=y_train_gpu)
+        for i in range(epochs):  # , desc='Epoch: ', position=0):
+            for idx in tqdm(range(train_rows), desc='Row: '):
+                idx = cltypes.uint(idx)
                 # copy all of these to the device?
-                x = x_train[idx]
-                y = y_train[idx]
-                y_buf = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=y)
-                output, output_width = self.forward(x)  # this is a buffer
-                # output and y need to use opencl.array
-                output = array.Array(self.queue, output_width, cltypes.float, data=output)
-                y_gpu = array.Array(self.queue, y.shape[0], cltypes.float, data=y_buf)
-                err = loss(output, y_gpu, output_width)
-                print(err)
+                output = self.forward(x_train_gpu, idx)
+                err = loss(y_train_gpu, output, idx=idx)
+                # self.backward(err)
+                # print(err)
+            print(err)

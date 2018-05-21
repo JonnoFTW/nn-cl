@@ -4,7 +4,7 @@ import pyopencl as cl
 import numpy as np
 from pyopencl import cltypes
 
-from nncl import nn, losses, layer, initializer, activation
+from nncl import nn, losses, layer, initializer
 
 
 def load_mnist(fname: str) -> np.ndarray:
@@ -16,11 +16,14 @@ def load_mnist(fname: str) -> np.ndarray:
 
 def to_one_hot(arr: np.ndarray) -> np.ndarray:
     b = np.max(arr) + 1
-    return np.eye(b)[arr]
+    return np.eye(b)[arr].astype(cltypes.float)
 
 
 if __name__ == "__main__":
-    ctx = cl.Context([cl.get_platforms()[1].get_devices()[0]])
+    platform = cl.get_platforms()[1]
+    device = platform.get_devices()[0]
+    print("Device:   ", device)
+    ctx = cl.Context([device])
     queue = cl.CommandQueue(ctx)
     net = nn.Network(ctx)
 
@@ -32,10 +35,12 @@ if __name__ == "__main__":
     x_test.shape = (x_test.shape[0], 784)
     y_test = to_one_hot(load_mnist('../data/mnist/t10k-labels-idx1-ubyte'))
 
-    dense_1 = layer.Dense(ctx, queue, input_width=784, output_width=800, activation='sigmoid')
-    dense_2 = layer.Dense(ctx, queue, input_width=800, output_width=10, activation='sigmoid')
+    dense_1 = layer.Dense(ctx, queue, input_width=784, output_width=512, activation='relu')
+    dense_2 = layer.Dense(ctx, queue, input_width=512, output_width=512, activation='relu')
+    softmax_3 = layer.Softmax(ctx, queue, input_width=512, output_width=10)
     net.add(dense_1)
     net.add(dense_2)
+    net.add(softmax_3)
     net.train(epochs=1,
               loss=losses.CategoricalCrossentropy(ctx),
               optimizer=None,
