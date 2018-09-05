@@ -2,7 +2,8 @@ import pyopencl as cl
 import numpy as np
 from pyopencl import cltypes
 import os
-from nncl import nn, losses, layer, initializer, activation
+from nncl import nn, losses
+from nncl.layers import layer
 
 if __name__ == "__main__":
     ctx = cl.Context([cl.get_platforms()[1].get_devices()[0]])
@@ -24,16 +25,17 @@ if __name__ == "__main__":
     y_train = y[:split_idx]
     x_test = x[split_idx:]
     y_test = y[split_idx:]
-
+    batch_size = 5
     # 4 features, 1 class
-    dense_1 = layer.Dense(ctx, queue, input_width=4, output_width=8, activation='tanh')
-    dense_2 = layer.Dense(ctx, queue, input_width=8, output_width=1)
+    dense_1 = layer.Dense(ctx, queue, input_width=4, output_width=16, activation='hard_sigmoid', batch_size=batch_size)
+    soft_2 = layer.Softmax(ctx, queue, input_width=16, output_width=3, batch_size=batch_size)
     net.add(dense_1)
-    net.add(dense_2)
+    net.add(soft_2)
     net.train(epochs=1,
-              loss=losses.MSE(ctx),
+              loss=losses.CategoricalCrossentropy(ctx),
               optimizer=None,
               x_train=x_train,
+              batch_size=batch_size,
               y_train=y_train,
               x_test=x_test,
               y_test=y_test)

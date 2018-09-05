@@ -8,6 +8,9 @@ class Loss:
         self.ctx = ctx
         self.make_reduction_krnl()
 
+    def cpu(self, *args, **kwargs):
+        raise NotImplementedError("Please use a subclass")
+
     def __call__(self, *args, **kwargs):
         raise NotImplementedError("Please use an actual loss")
 
@@ -26,6 +29,21 @@ class MSE(Loss):
             arguments="__global const float* y_true, __global const float* y_pred",
             name="mse_reduction_kernel"
         )
+
+    def cpu(self, y_true, y_pred, idx):
+        preds = y_pred.get()
+        fields, batch_size = preds.shape
+        y_true_np = y_true[idx * batch_size:idx * batch_size + batch_size].get().T
+        print("y_pred:")
+        print(preds)
+        print("y_true:")
+        print(y_true_np)
+        mse = np.power(preds-y_true_np, 2) / fields
+        print("MSE:")
+        print(mse)
+        print("Batch Mean Loss:")
+        print(mse.mean())
+        return mse.mean()
 
     def __call__(self, y_true, y_pred, n):
         return self.krnl(y_true, y_pred).get() / n
