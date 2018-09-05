@@ -13,6 +13,7 @@ class Optimizer:
 class SGD(Optimizer):
     def __init__(self, learing_rate=0.1, reg=0.003):
         self.learning_rate = cltypes.float(learing_rate)
+        self.lr = self.learning_rate
         self.reg = cltypes.float(reg)
 
     def __call__(self, net, err, x_data, y_data, batch_number):

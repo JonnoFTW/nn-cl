@@ -3,6 +3,7 @@ import pyopencl as cl
 from pyopencl import array, cltypes
 from tqdm import tqdm
 from typing import List
+import humanize
 
 from nncl.layers.layer import Layer
 from nncl.losses import Loss
@@ -50,15 +51,16 @@ class Network:
         #  buf = x.get_sub_region(size * idx, size)
         offset = cltypes.int(self.batch_size * size * idx)
         for idx, l in enumerate(self.layers):
-            input_np = np.zeros((self.batch_size, l.input_width), dtype=cltypes.float)
-            cl.enqueue_copy(self.queue, input_np, buf, device_offset=offset * 4)
+            # input_np = np.zeros((self.batch_size, l.input_width), dtype=cltypes.float)
+            l.inputs = buf
+            # cl.enqueue_copy(self.queue, input_np, buf, device_offset=offset * 4)
             # print(f"Layer {idx}")
             # print(f"Input: cols={l.input_width} inputs rows={l.batch_size} samples/batch\n", input_np)
-            buf = l(buf, offset).data
+            buf = l(buf, offset)
             offset = cltypes.int(0)
-            weights = l.get_weights().reshape(l.units, l.input_width)
-            bias = l.get_bias()
-            output = l.get_output()
+            # weights = l.get_weights().reshape(l.units, l.input_width)
+            # bias = l.get_bias()
+            # output = l.get_output()
             # print(f"\nWeights: (rows={l.units} units, cols={l.input_width} inputs)\n", weights)
             # print("Biases:\n", bias)
             # print(f"Output: (cols={l.batch_size} samples/batch, rows={l.units} units)\n", output)
@@ -138,6 +140,9 @@ class Network:
             raise ValueError(
                 f"Input features (provided={input_features}) must be the same as layer_0 input width (required={self.layers[0].input_width})")
         # Just copy all training and all testing data to the device
+        for dn, ds in ("x_train", x_train), ("y_train", y_train), ("x_test", x_test), ("y_test", y_test):
+            print("{}\n\tsize={}\n\tshape={}".format(dn, humanize.naturalsize(ds.nbytes), ds.shape))
+
         x_train_gpu = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=x_train)
         # y_train_gpu = cl.Buffer(self.ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=y_train)
         # y_train_gpu = array.Array(self.queue, y_train.shape, dtype=cltypes.float, data=y_train)
@@ -158,7 +163,6 @@ class Network:
                 # copy all of these to the device?
                 output = self.forward(x_train_gpu, idx)
                 err = loss.cpu(y_train_gpu, output, idx=idx)
+                print(f"Err={err}")
                 optimizer(self, err, x_train_gpu, y_train_gpu, idx)
-                # self.backward(err, x_data=x_train_gpu, idx=idx, y_true=y_train_gpu, optimizer=optimizer)
-                # print(err)
-            # print(err)
+

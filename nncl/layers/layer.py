@@ -38,6 +38,7 @@ class Layer:
         self.bias = array.to_device(self.queue, self.bias_buf)
         # should probably make this 2d so it can have dimensions (output_width, batch_size)
         self.output = array.zeros(self.queue, (self.units, self.batch_size), order='', dtype=cltypes.float)
+        self.output_data = self.output.data
         self.deltas = array.zeros(self.queue, self.units, dtype=cltypes.float)
         self.input_width = cltypes.uint(self.input_width)
         self.output_width = cltypes.uint(self.units)
@@ -59,20 +60,16 @@ class Layer:
     def forward(self, input: array.Array, weights=None):
         return self(input, weights)
 
-    def __call__(self, input: array.Array, offset, weights: array.Array = None) -> array.Array:
-        if weights is None:
-            weights = self.weights
-        elif weights.shape != self.weights.shape:
-            raise ValueError("Invalid custom weights shape")
+    def __call__(self, input: array.Array, offset) -> array.Array:
         self.forward_krnl(self.queue, (self.output_width, self.batch_size), None,
                           input,
-                          weights.data,
+                          self.weights.data,
                           self.bias.data,
                           self.output.data,
                           self.input_width,
                           offset
                           ).wait()
-        return self.output
+        return self.output_data
 
     def backward(self, err, x_train: cl.Buffer, y_true: cl.Buffer, lr: float, reg: float):
         if not self.is_training:
@@ -80,7 +77,7 @@ class Layer:
         self.backward_krnl(self.queue, (self.input_width,), None,
                            self.output.data,
                            x_train,
-                           y_true,
+                           y_true.data,
                            self.weights.data,
                            lr,
                            reg

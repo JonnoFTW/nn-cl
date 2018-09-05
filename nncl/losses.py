@@ -34,16 +34,16 @@ class MSE(Loss):
         preds = y_pred.get()
         fields, batch_size = preds.shape
         y_true_np = y_true[idx * batch_size:idx * batch_size + batch_size].get().T
-        print("y_pred:")
-        print(preds)
-        print("y_true:")
-        print(y_true_np)
+        # print("y_pred:")
+        # print(preds)
+        # print("y_true:")
+        # print(y_true_np)
         mse = np.power(preds-y_true_np, 2) / fields
-        print("MSE:")
-        print(mse)
-        print("Batch Mean Loss:")
-        print(mse.mean())
-        return mse.mean()
+        # print("MSE:")
+        # print(mse)
+        # print("Batch Mean Loss:")
+        # print(mse.mean())
+        return mse.mean(axis=1)
 
     def __call__(self, y_true, y_pred, n):
         return self.krnl(y_true, y_pred).get() / n
@@ -68,7 +68,10 @@ class CategoricalCrossentropy(Loss):
         )
 
     def cpu(self, y_true, y_pred, idx):
-        return -((y_true[idx].get() * np.log2(y_pred.get())).sum())
+        preds = y_pred.get()
+        fields, batch_size = preds.shape
+        y_true_np = y_true[idx * batch_size:idx * batch_size + batch_size].get().T
+        return -(y_true_np * np.log2(preds)).sum()
 
     def __call__(self, y_true, y_pred, idx):
         return self.krnl(y_true[idx], y_pred).get()

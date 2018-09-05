@@ -17,6 +17,7 @@ class Softmax(Layer):
                            x_train,
                            y_true,
                            self.weights.data,
+                           self.bias.data.
                            self.deltas.data,
                            self.output_width,
                            lr,

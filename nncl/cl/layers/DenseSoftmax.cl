@@ -5,11 +5,10 @@
 __kernel void softmax_layer_forward(
    __global const float* input,   // input buffer
    __global const float* weights, // layer weights
-//   __global float* biases,  // layer bias
+   __global float* biases,  // layer bias
    __global float* output,  // output buffer
     const int input_width,  // input width
     const int offset // the offset into the input data
-//     __local float* exponents
 ) {
 
     // calculate product + layer bias
@@ -17,16 +16,20 @@ __kernel void softmax_layer_forward(
     const int output_width = get_global_size(0);
     const int batch_id = get_global_id(1);     //  the input sample of the current batch
     const int batch_size = get_global_size(1); // the size of a batch
-//    const int group_size = get_local_size(0);
-//    const int lid = get_local_id(0);
     // calculate the weighted input for cell gid,
-    float sum = 0; // biases[gid];
+    float sum = biases[gid];
+    const int output_idx = output_width * batch_id + gid;
     for(int i = 0; i < input_width; i++) {
-        sum += weights[gid * input_width + i] * input[offset + batch_id * batch_size + i];
+        const float weight = weights[gid * input_width + i];
+        const int input_idx = i + offset + batch_id;
+        const float input_val = input[input_idx];
+        sum += weight * input_val;
     }
     sum = exp(sum);
-    output[gid + batch_size * batch_id] = sum;
+    output[output_idx] = sum;
+
     barrier(CLK_GLOBAL_MEM_FENCE);
+    // output array now has exponentiated output
     float sumExp = 0;
     for(int i = 0; i < output_width; i++) { // should be a column sum for this batch
         sumExp += output[i + batch_size * batch_id]; // this is wrong
@@ -41,7 +44,7 @@ __kernel void softmax_layer_forward(
 //        barrier(CLK_LOCAL_MEM_FENCE);
 //    }
 //    barrier(CLK_GLOBAL_MEM_FENCE);
-    output[gid + batch_size * batch_id] = sum / sumExp;
+    output[output_idx] = sum / sumExp;
 }
 __kernel void softmax_layer_backward(
     __global const float* y_pred, // the probabilities, `output` in the forward step

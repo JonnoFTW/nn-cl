@@ -7,10 +7,9 @@ from pyopencl import cltypes
 from nncl import nn, losses, initializer
 from nncl.layers import Dense, Softmax
 from nncl.optimizers import SGD
-
+from nncl.util import get_device
 if __name__ == "__main__":
-    platform = cl.get_platforms()[0]
-    device = platform.get_devices()[0]
+    device = get_device()
 
     ctx = cl.Context([device])
     queue = cl.CommandQueue(ctx)

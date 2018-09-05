@@ -18,7 +18,7 @@ __kernel void dense_layer_forward(
     const int batch_size = get_global_size(1); // the size of a batch
     float sum = biases[gid];
     const int output_idx = output_width * batch_id + gid;
-    if(DEBUG) {
+    #if DEBUG
         if(gid == 0 && batch_id==0) {
             printf("Inputs for batch are:\n");
             for(int i=0; i< batch_size;i++) {
@@ -26,17 +26,19 @@ __kernel void dense_layer_forward(
             }
         }
         printf("DenseKrnl unit=%d/%d batch=%d/%d output_idx=%d\n", gid, output_width-1, batch_id, batch_size-1, output_idx);
-    }
+    #endif
     for(int i = 0; i < input_width; i++) {
         const float weight = weights[gid * input_width + i];
         const int input_idx = i + offset + batch_id;
         const float input_val = input[input_idx];
-        if(DEBUG)
+        #if DEBUG
             printf("\tW_%d,%d=%.3f x input=%.3f = %.3f (input_idx=%d)\n",gid,i, weight, input_val, weight*input_val, input_idx);
+        #endif
         sum += weight * input_val;
     }
-    if(DEBUG)
+    #if DEBUG
         printf("\tTotal=%.3f\n", sum);
+    #endif
     output[output_idx] = ${activation}(sum);
 }
 __kernel void dense_layer_backward(
@@ -46,7 +48,7 @@ __kernel void dense_layer_backward(
     const int input_width
 ) {
     const int gid = get_global_id(0);
-    const float err = ${derivative}(input[gid]);
+    const float error = ${derivative}(input[gid]);
 
     // calculate output as transpose
 
