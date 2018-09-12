@@ -1,10 +1,8 @@
-// relu
+// reludata
 
-float activation_relu(float x) {
+${dtype} activation_relu(${dtype} x) {
     return max(0.0f, x);
 }
-float derivative_relu(float x) {
-    if (x < 0)
-        return 0;
-    return 1;
+${dtype} derivative_relu(${dtype} x) {
+    return step(0.0f, x);
 }

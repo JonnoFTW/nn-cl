@@ -4,9 +4,10 @@ import numpy as np
 
 
 class Loss:
-    def __init__(self, ctx):
+    def __init__(self, ctx, use_cpu=True):
         self.ctx = ctx
         self.make_reduction_krnl()
+        self.use_cpu = use_cpu
 
     def cpu(self, *args, **kwargs):
         raise NotImplementedError("Please use a subclass")
@@ -38,14 +39,16 @@ class MSE(Loss):
         # print(preds)
         # print("y_true:")
         # print(y_true_np)
-        mse = np.power(preds-y_true_np, 2) / fields
+        mse = np.power(preds - y_true_np, 2) / fields
         # print("MSE:")
         # print(mse)
         # print("Batch Mean Loss:")
         # print(mse.mean())
-        return mse.mean(axis=1)
+        return mse.mean()
 
-    def __call__(self, y_true, y_pred, n):
+    def __call__(self, y_true, y_pred, idx):
+        if self.use_cpu:
+            return self.cpu(y_true, y_pred, idx)
         return self.krnl(y_true, y_pred).get() / n
 
 
@@ -62,16 +65,16 @@ class CategoricalCrossentropy(Loss):
             neutral="0",
             reduce_expr="a+b",
             # p is the true distribution, q is predicted
-            map_expr="y_true[i] * (-log2(y_pred[i]))",
+            map_expr="y_true[i] * (-log(y_pred[i]))",
             arguments="__global const float* y_true, __global const float* y_pred",
             name="categorical_crossentropy_reduction_kernel"
         )
 
     def cpu(self, y_true, y_pred, idx):
         preds = y_pred.get()
-        fields, batch_size = preds.shape
-        y_true_np = y_true[idx * batch_size:idx * batch_size + batch_size].get().T
-        return -(y_true_np * np.log2(preds)).sum()
+        batch_size, fields = preds.shape
+        y_true_np = y_true[idx * batch_size:idx * batch_size + batch_size].get()
+        return (-((y_true_np * np.log(preds)).sum(axis=1))).mean()
 
     def __call__(self, y_true, y_pred, idx):
         return self.krnl(y_true[idx], y_pred).get()

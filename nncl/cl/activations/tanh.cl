@@ -1,9 +1,9 @@
 // tanh
 
-float activation_tanh(float x) {
+${dtype} activation_tanh(${dtype} x) {
     return tanh(x);
 }
-float derivative_tanh(float x) {
+${dtype} derivative_tanh(${dtype} x) {
     return 1 - pow(tanh(x),2);
 }
 

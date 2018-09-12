@@ -1,8 +1,8 @@
 // linear
 
-float activation_linear(float x) {
+${dtype} activation_linear(${dtype} x) {
     return x;
 }
-float derivative_linear(float x) {
+${dtype} derivative_linear(${dtype} x) {
     return 1;
 }

@@ -1,6 +1,5 @@
 import numpy as np
-from pyopencl import cltypes
-
+from nncl.util import get_type
 
 class Initializer:
     def __init__(self, *args):
@@ -10,7 +9,7 @@ class Initializer:
         raise NotImplementedError("Please use a subclass")
 
     def __call__(self, *args, **kwargs):
-        return self._make_array(*args, **kwargs).astype(cltypes.float)
+        return self._make_array(*args, **kwargs).astype(get_type())
 
 
 class DistributionInitializer(Initializer):

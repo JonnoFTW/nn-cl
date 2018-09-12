@@ -1,12 +1,18 @@
 import pyopencl as cl
+from multiprocessing.dummy import Value
 from pyopencl import cltypes, CommandQueue, array
 from nncl.initializer import Initializer, GlorotUniformInitializer, ZeroInitializer
+from nncl.util import get_type, get_type_repl
 
 mf = cl.mem_flags
+
+dtype = get_type()
+dtype_str = get_type_repl()
 
 
 class Layer:
     name = "AbstractLayer"
+
     def __init__(self, ctx, queue: CommandQueue, units,
                  weight_initializer: Initializer = GlorotUniformInitializer,
                  bias_initializer: Initializer = ZeroInitializer,
@@ -20,6 +26,7 @@ class Layer:
         self.is_training = True
         self.queue = queue
         self.batch_size = batch_size
+        self.dtype_str = dtype_str
         self.src = ""
         with open(f'../nncl/cl/activations/{self.activation}.cl', 'r') as infile:
             self.src += infile.read() + "\n"
@@ -37,12 +44,19 @@ class Layer:
         self.bias_buf = bias_initializer((self.units, 1))
         self.bias = array.to_device(self.queue, self.bias_buf)
         # should probably make this 2d so it can have dimensions (output_width, batch_size)
-        self.output = array.zeros(self.queue, (self.units, self.batch_size), order='', dtype=cltypes.float)
+        self.output = array.zeros(self.queue, (self.batch_size, self.units), dtype=dtype)
         self.output_data = self.output.data
-        self.deltas = array.zeros(self.queue, self.units, dtype=cltypes.float)
+        self.deltas = array.zeros(self.queue, self.units, dtype=dtype)
+        self.errors = array.zeros(self.queue, (self.units, self.batch_size), dtype=dtype)
         self.input_width = cltypes.uint(self.input_width)
         self.output_width = cltypes.uint(self.units)
         self.activation = self.activation
+        max_output, max_batch_size = self.queue.device.max_work_item_sizes[:2]
+        if self.output_width > max_output:
+            raise ValueError(f"Layer output cannot exceed {max_output}, you gave {self.output_width}")
+        if self.batch_size > max_batch_size:
+            raise ValueError(f"Batch size cannot exceed {max_batch_size}, you gave {self.batch_size}")
+
         return self.units
 
     def make_prog(self):
@@ -57,13 +71,15 @@ class Layer:
     def get_output(self):
         return self.output.get()
 
-    def forward(self, input: array.Array, weights=None):
-        return self(input, weights)
+    def forward(self, input: array.Array, offset, weights=None):
+        return self(input, offset, weights)
 
-    def __call__(self, input: array.Array, offset) -> array.Array:
-        self.forward_krnl(self.queue, (self.output_width, self.batch_size), None,
+    def __call__(self, input: array.Array, offset, weights=None) -> array.Array:
+        if weights is None:
+            weights = self.weights.data
+        self.forward_krnl(self.queue, (self.batch_size, self.output_width), None,
                           input,
-                          self.weights.data,
+                          weights,
                           self.bias.data,
                           self.output.data,
                           self.input_width,
@@ -71,15 +87,19 @@ class Layer:
                           ).wait()
         return self.output_data
 
-    def backward(self, err, x_train: cl.Buffer, y_true: cl.Buffer, lr: float, reg: float):
+    def backward(self,
+                 loss,
+                 x_train: cl.Buffer,
+                 y_true: cl.array,
+                 lr: float,
+                 reg: float):
         if not self.is_training:
             return self.deltas
-        self.backward_krnl(self.queue, (self.input_width,), None,
+        self.backward_krnl(self.queue, (self.output_width, self.batch_size), None,
                            self.output.data,
-                           x_train,
-                           y_true.data,
                            self.weights.data,
-                           lr,
-                           reg
+                           y_true.data,
+                           self.errors.data,
+                           self.input_width
                            ).wait()
         return self.deltas

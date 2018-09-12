@@ -9,7 +9,7 @@ from nncl.layers import Dense, Softmax
 from nncl.optimizers import SGD
 from nncl.util import get_device
 if __name__ == "__main__":
-    device = get_device()
+    device = cl.get_platforms()[1].get_devices()[0]
 
     ctx = cl.Context([device])
     queue = cl.CommandQueue(ctx)
@@ -20,16 +20,17 @@ if __name__ == "__main__":
     #                     [1, 0]]).astype(cltypes.float)
     # y_train = to_one_hot(np.array([0, 1, 0, 1])).astype(cltypes.float)
 
+    np.random.seed(0)
     x_train = np.random.uniform(0, 1, (16, 2))
     x_train[0] = [1]
     x_train[1] = [2]
     y_train = (x_train[:,0] > 0.5).reshape(16,1)
     batch_size = 4
-    np.random.seed(0)
+
     net = nn.Network(ctx=ctx, input_size=2, batch_size=batch_size)
     dense_1 = Dense(ctx, queue,
                     units=6,
-                    activation='relu',
+                    activation='linear',
                     batch_size=batch_size)
     sigmoid_2 = Dense(ctx, queue, units=1, batch_size=batch_size, activation='sigmoid')
     net.add(dense_1)
@@ -40,6 +41,7 @@ if __name__ == "__main__":
               loss=losses.MSE(ctx),
               optimizer=SGD(),
               batch_size=batch_size,
+              shuffle=False,
               x_train=x_train,
               y_train=y_train,
               x_test=x_train,

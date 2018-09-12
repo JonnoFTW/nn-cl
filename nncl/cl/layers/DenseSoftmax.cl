@@ -1,28 +1,28 @@
 /**
  * Softmax activated dense layer
 **/
-
+#pragma OPENCL EXTENSION cl_khr_fp64 : enable
 __kernel void softmax_layer_forward(
-   __global const float* input,   // input buffer
-   __global const float* weights, // layer weights
-   __global float* biases,  // layer bias
-   __global float* output,  // output buffer
+   __global const ${dtype}* input,   // input buffer
+   __global const ${dtype}* weights, // layer weights
+   __global ${dtype}* biases,  // layer bias
+   __global ${dtype}* output,  // output buffer
     const int input_width,  // input width
     const int offset // the offset into the input data
 ) {
 
     // calculate product + layer bias
-    const int gid = get_global_id(0); // id of the neuron we're evaluating
-    const int output_width = get_global_size(0);
-    const int batch_id = get_global_id(1);     //  the input sample of the current batch
-    const int batch_size = get_global_size(1); // the size of a batch
+    const int gid = get_global_id(1); // id of the neuron we're evaluating
+    const int output_width = get_global_size(1);
+    const int batch_id = get_global_id(0);     //  the input sample of the current batch
+    const int batch_size = get_global_size(0); // the size of a batch
     // calculate the weighted input for cell gid,
-    float sum = biases[gid];
-    const int output_idx = output_width * batch_id + gid;
+    ${dtype} sum = biases[gid];
+    const int output_idx = batch_id *  output_width + gid;
     for(int i = 0; i < input_width; i++) {
-        const float weight = weights[gid * input_width + i];
-        const int input_idx = i + offset + batch_id;
-        const float input_val = input[input_idx];
+        const ${dtype} weight = weights[gid * input_width + i];
+        const int input_idx =  offset + (batch_id * input_width) + i;
+        const ${dtype} input_val = input[input_idx];
         sum += weight * input_val;
     }
     sum = exp(sum);
@@ -30,10 +30,13 @@ __kernel void softmax_layer_forward(
 
     barrier(CLK_GLOBAL_MEM_FENCE);
     // output array now has exponentiated output
-    float sumExp = 0;
+    ${dtype} sumExp = 0;
     for(int i = 0; i < output_width; i++) { // should be a column sum for this batch
-        sumExp += output[i + batch_size * batch_id]; // this is wrong
+        sumExp += output[batch_id * output_width + i]; // this is wrong
     }
+
+//    printf("unit: %d batch_id: %d exp: %.2f sumExp: %.3f activation: %.3f\n", gid, batch_id, sum, sumExp, sum/sumExp);
+
     // should probably do this reduction properly
 //    exponents[gid * batch_size + batch_id] = sum;
 //    barrier(CLK_LOCAL_MEM_FENCE);
@@ -47,22 +50,22 @@ __kernel void softmax_layer_forward(
     output[output_idx] = sum / sumExp;
 }
 __kernel void softmax_layer_backward(
-    __global const float* y_pred, // the probabilities, `output` in the forward step
-    __global const float* x_train,
-    __global const float* y_true,
-    __global float* weights,
-    __global float* deltas,
+    __global const ${dtype}* y_pred, // the probabilities, `output` in the forward step
+    __global const ${dtype}* x_train,
+    __global const ${dtype}* y_true,
+    __global ${dtype}* weights,
+    __global ${dtype}* deltas,
     const int x_width,
-    const float lr, // the learning rate
-    const float reg // the regularization value
+    const ${dtype} lr, // the learning rate
+    const ${dtype} reg // the regularization value
 ) {
     // Diff is p_x-1 if y_true matches
     const int gid = get_global_id(0); // the output cell idx
     const int output_width = get_global_size(0);
     // for each W of this cell
  //   for(int i = 0; i < o)
-    float diff = y_pred[gid] - 1*(y_true[gid] == 1.0);
-    float dW = reg; // this needs to be over the transpose: dW = X.T * W 
+    ${dtype} diff = y_pred[gid] - 1*(y_true[gid] == 1.0);
+    ${dtype} dW = reg; // this needs to be over the transpose: dW = X.T * W
     for(int i = 0; i < x_width; i++) {
         dW += diff * x_train[i];
     }

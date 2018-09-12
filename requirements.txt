@@ -2,3 +2,4 @@ mako
 pyopencl
 numpy
 tqdm
+humanize

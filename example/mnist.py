@@ -5,8 +5,9 @@ import numpy as np
 from pyopencl import cltypes
 
 from nncl import nn, losses, initializer
+from nncl.callbacks import PlotCallback
 from nncl.layers import Dense, Softmax
-from nncl.optimizers import SGD
+from nncl.optimizers import SGD, Anneal
 from nncl.util import to_one_hot, get_device
 
 
@@ -19,6 +20,7 @@ def load_mnist(fname: str) -> np.ndarray:
 
 if __name__ == "__main__":
     device = get_device()
+    # device= cl.get_platforms()[0].get_devices()[0]
     np.set_printoptions(linewidth=128)
     ctx = cl.Context([device])
     queue = cl.CommandQueue(ctx)
@@ -32,11 +34,11 @@ if __name__ == "__main__":
     x_test.shape = (x_test.shape[0], 784)
     y_test = to_one_hot(load_mnist('../data/mnist/t10k-labels-idx1-ubyte'))
 
-    batch_size = 32
+    batch_size = 5
     np.random.seed(0)
     net = nn.Network(ctx=ctx, input_size=784, batch_size=batch_size)
     dense_1 = Dense(ctx, queue,
-                    units=16,
+                    units=64,
                     activation='relu',
                     batch_size=batch_size)
     # dense_2 = Dense(ctx, queue, units=512, activation='relu', batch_size=batch_size)
@@ -46,11 +48,18 @@ if __name__ == "__main__":
     net.add(softmax_3)
     net.build()
     net.summary()
+    loss = losses.CategoricalCrossentropy(ctx)
     net.train(epochs=1,
-              loss=losses.CategoricalCrossentropy(ctx),
-              optimizer=SGD(),
+              loss=loss,
+              optimizer=Anneal(queue, loss, max_updates=32),
               batch_size=batch_size,
               x_train=x_train,
               y_train=y_train,
               x_test=x_test,
-              y_test=y_test)
+              y_test=y_test,
+              validation_pct=.1,
+              validation_method='cross-validation',
+              callbacks=[
+                  # PlotCallback(['batch'], 'Batch Loss', True),
+                  # PlotCallback(['validation', 'testing'], 'Val/Test Loss', False)
+              ])
