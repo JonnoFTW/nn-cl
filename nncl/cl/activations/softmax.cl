@@ -1,1 +1,1 @@
-// implemented as a specific layer type
+// activation is defined in the layer type

@@ -18,6 +18,15 @@ class Loss:
     def make_reduction_krnl(self):
         raise NotImplementedError("Please use a subclass that implements loss")
 
+    def deltas(self, y_pred, y_true):
+        """
+        Get deltas
+        :param y_pred:
+        :param y_true:
+        :return:
+        """
+        raise NotImplementedError("Please use an actual loss function")
+
 
 class MSE(Loss):
     def make_reduction_krnl(self):
@@ -31,25 +40,23 @@ class MSE(Loss):
             name="mse_reduction_kernel"
         )
 
-    def cpu(self, y_true, y_pred, idx):
-        preds = y_pred.get()
-        fields, batch_size = preds.shape
-        y_true_np = y_true[idx * batch_size:idx * batch_size + batch_size].get().T
+    def cpu(self, y_true, y_pred):
+        y_pred_np = y_pred.get()
+        fields = y_pred_np.shape[1]
+        y_true_np = y_true.get().T
         # print("y_pred:")
         # print(preds)
         # print("y_true:")
         # print(y_true_np)
-        mse = np.power(preds - y_true_np, 2) / fields
+        mse = np.power(y_pred_np - y_true_np, 2) / fields
         # print("MSE:")
         # print(mse)
         # print("Batch Mean Loss:")
         # print(mse.mean())
         return mse.mean()
 
-    def __call__(self, y_true, y_pred, idx):
-        if self.use_cpu:
-            return self.cpu(y_true, y_pred, idx)
-        return self.krnl(y_true, y_pred).get() / n
+    def __call__(self, y_true, y_pred):
+        return self.krnl(y_true, y_pred).get() / y_pred.shape[0]
 
 
 class CategoricalCrossentropy(Loss):
@@ -70,13 +77,16 @@ class CategoricalCrossentropy(Loss):
             name="categorical_crossentropy_reduction_kernel"
         )
 
-    def cpu(self, y_true, y_pred, idx):
-        preds = y_pred.get()
-        batch_size, fields = preds.shape
-        y_true_np = y_true[idx * batch_size:idx * batch_size + batch_size]
-        out = (-((y_true_np * np.log(preds)).sum(axis=1)))
-        # for o in zip(out, np.argmax(preds, axis=1),np.argmax(y_true_np,axis=1)):
-        #     print(f"Err: {o[0]} expected: {o[2]} predicted: {o[1]}")
+    def errors(self, y_pred, y_true):
+        return y_pred - y_true
+
+    def cpu(self, y_true, y_pred):
+        y_pred_np = y_pred.get()
+        y_true_np = y_true.get()
+        out = (-((y_true_np * np.log(y_pred_np)).sum(axis=1)))
+        # for o in zip(out, np.argmax(y_pred_np, axis=1), np.argmax(y_true_np, axis=1), y_pred_np):
+        #     print(f"{o[3]} Err: {o[0]} expected: {o[2]} predicted: {o[1]}")
+        # print("Errors:\n", y_true - y_pred)
         return out.mean()
 
     def __call__(self, y_true, y_pred, idx):

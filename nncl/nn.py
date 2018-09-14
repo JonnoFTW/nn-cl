@@ -51,27 +51,23 @@ class Network:
             print(f"\tUnits: {l.units}")
             print(f"\tActivation: {l.activation}")
 
-    def forward(self, buf, idx, verbose=False):
+    def forward(self, buf: array.Array, verbose: bool = False):
         # put x in the buffer
         size = self.layers[0].input_width
         # can probably do better here
         # this only works on pocl because they didn't implement CL_MISALIGNED_SUB_BUFFER_OFFSET 
         #  buf = x.get_sub_region(size * idx, size)
-        offset = cltypes.int(self.batch_size * size * idx)
-        input_np = np.zeros((self.batch_size, size), dtype=dtype)
-        cl.enqueue_copy(self.queue, input_np, buf, device_offset=offset * 4).wait()
+        input_np = buf.get()
         for idx, l in enumerate(self.layers):
-            l.inputs = buf
+            l.inputs = input_np.copy()
             if verbose:
                 print(f"Layer {idx}")
                 print(f"Input Batch: rows={l.batch_size} samples cols={l.input_width} features \n", input_np)
-            buf = l(buf, offset)
-            offset = cltypes.int(0)
-
+            buf = l(buf)
+            output = buf.get()
             if verbose:
                 weights = l.get_weights()
                 bias = l.get_bias()
-                output = l.get_output()
                 print(f"\nWeights: (rows={l.units} units, cols={l.input_width} inputs)\n", weights)
                 # print("Biases:\n", bias)
                 print(f"\nOutput: (rows={l.batch_size} batch samples cols={l.units} units)\n", output)
@@ -84,25 +80,10 @@ class Network:
                     exps = np.exp(expected)
                     expected = exps / exps.sum(axis=1)[:, None]
                 print("Expected:\n", expected)
-                input_np = output
+            input_np = output
 
         # output is the output of the last layer
-        return self.layers[-1].output
-
-    def backward(self, err, x_data: cl.Buffer, idx, y_true, optimizer: Optimizer):
-        """
-
-        :param err: the loss error
-        :param x_data:
-        :param idx:
-        :param y_true:
-        :param optimizer:
-        :return:
-        """
-        size = self.layers[0].input_width
-        x_data = x_data.get_sub_region(size * idx, size)
-        y_data = y_true[idx].data
-        optimizer(self, err, x_data, y_data, idx)
+        return buf
 
     def read_only_arr(self, numbytes):
         return cl.Buffer(self.ctx, cl.mem_flags.READ_ONLY, numbytes)
@@ -246,7 +227,8 @@ class Network:
             except AttributeError:
                 pass
 
-        x_train_gpu = cl.Buffer(self.ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=x_train)
+        # x_train_gpu = cl.Buffer(self.ctx, mf.READ_WRITE | mf.COPY_HOST_PTR, hostbuf=x_train)
+        x_train_gpu = array.to_device(self.queue, x_train)
         y_train_gpu = array.to_device(self.queue, y_train)
 
         # should probably check that our data won't exceed available device memory,
@@ -259,22 +241,24 @@ class Network:
         for i in tqdm(range(epochs), desc='Epoch: ', position=0):
             # shuffle the rows
             if shuffle:
-                self.shuffle(x_train_gpu, y_train_gpu.data, training_samples, input_features, output_features)
+                self.shuffle(x_train_gpu.data, y_train_gpu.data, training_samples, input_features, output_features)
             for idx in tqdm(range(training_samples // batch_size), desc='Batch: ', position=1, unit=' batch'):
                 idx = cltypes.uint(idx)
                 # idx here is the batch number
+
+                batch_x_gpu = x_train_gpu[idx * batch_size: idx * batch_size + batch_size]
+                batch_y_gpu = y_train_gpu[idx * batch_size: idx * batch_size + batch_size]
                 # copy all of these to the device?
-                output = self.forward(x_train_gpu, idx, verbose=False)
-                err = loss.cpu(y_train, output, idx=idx)
-                # err = loss(y_train_gpu, output, idx=idx)
-                losses['batch'].append(err)
-                # print(f"Mean Batch Loss={err}")
-                optimizer(self, err, x_train_gpu, y_train_gpu, idx)
-                # optimizer(self, err, x_train_gpu, y_train, idx)
-                if idx % 900 == 0:
-                    for c in callbacks:
-                        if c.batch_end:
-                            c(losses)
+                output = self.forward(batch_x_gpu, verbose=False)
+                loss_val = loss.cpu(batch_y_gpu, output)
+                # err = loss(batch_y_gpu, output, )
+                losses['batch'].append(loss_val)
+                # print(f"Mean Batch Loss={loss_val}")
+                optimizer(loss, self, batch_x_gpu, batch_y_gpu)
+                # if idx % 900 == 0:
+                #     for c in callbacks:
+                #         if c.batch_end:
+                #             c(losses)
             # run the network and get error for the validation set
             # this should be a single batch of size validation_samples
             # will need to allocate specific validation arrays

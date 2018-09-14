@@ -2,7 +2,6 @@
 from sklearn.datasets import make_moons
 from sklearn.cross_validation import train_test_split
 import numpy as np
-from random import shuffle
 
 X, y = make_moons(n_samples=5000, random_state=42, noise=0.1)
 X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
@@ -52,12 +51,18 @@ def backward(model, xs, hs, errs):
     return dict(W1=dW1, W2=dW2)
 
 
+def unison_shuffled_copies(a, b):
+    assert len(a) == len(b)
+    p = np.random.permutation(len(a))
+    return a[p], b[p]
+
+
 def sgd(model, X_train, y_train, minibatch_size):
     for iter in range(n_iter):
-        print('Iteration {}'.format(iter))
+        print('\tBatch {}'.format(iter))
 
         # Randomize data point
-        X_train, y_train = shuffle(X_train, y_train)
+        X_train, y_train = unison_shuffled_copies(X_train, y_train)
 
         for i in range(0, X_train.shape[0], minibatch_size):
             # Get pair of (X, y) of the current minibatch/chunk
@@ -106,8 +111,8 @@ def get_minibatch_grad(model, X_train, y_train):
     return backward(model, np.array(xs), np.array(hs), np.array(errs))
 
 
-minibatch_size = 50
-n_experiment = 100
+minibatch_size = 10
+n_experiment = 20
 
 # Create placeholder to accumulate prediction accuracy
 accs = np.zeros(n_experiment)
@@ -115,7 +120,7 @@ accs = np.zeros(n_experiment)
 for k in range(n_experiment):
     # Reset model
     model = make_network()
-
+    print(f"Epoch: {k}")
     # Train the model
     model = sgd(model, X_train, y_train, minibatch_size)
 

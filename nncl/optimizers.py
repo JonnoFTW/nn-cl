@@ -1,5 +1,5 @@
 import numpy as np
-from pyopencl import cltypes, clrandom, Program, CommandQueue
+from pyopencl import cltypes, Program, CommandQueue
 from pyopencl import array
 
 from nncl.util import get_type, get_type_repl
@@ -12,20 +12,30 @@ class Optimizer:
     def __init__(self, *args, **kwargs):
         raise NotImplementedError("Please use an actual optimizer")
 
-    def __call__(self, net, err, x_data, y_data, batch_number):
+    def __call__(self, loss_func, net, x_data, y_data):
         raise NotImplementedError("Please use an actual optimizer")
 
 
 class SGD(Optimizer):
-    def __init__(self, learing_rate=0.1, reg=0.003):
+    def __init__(self, learing_rate=0.0001, reg=0.003):
         self.learning_rate = cltypes.float(learing_rate)
         self.lr = self.learning_rate
         self.reg = cltypes.float(reg)
 
-    def __call__(self, net, err, x_data, y_data, batch_number):
+    def __call__(self, loss_func, net, batch_x_gpu, batch_y_gpu):
+        evs = []
+        y_pred = net.layers[-1].output
+        # use the appropriate derivative across errs
+        # store the output gradients
+        y_errors = loss_func.errors(y_pred, batch_y_gpu)
         for l in net.layers[::-1]:
-            buf = l.backward(err, x_data, y_data, self.lr, self.reg)
-            print("Errors:\n", l.errors.get())
+            # calculate grads for this layer
+            # l.get_grads(y_errors)
+            ev = l.backward(y_errors, self.lr)
+            if ev is not None:
+                evs.append(ev)
+        for e in evs:
+            e.wait()
 
 
 class Anneal(Optimizer):
@@ -65,7 +75,7 @@ __kernel void add_rand(__global const ${dtype}* a,
         prog = Program(self.ctx, src).build()
         return prog.add_rand
 
-    def __call__(self, net, err, x_data, y_data, idx):
+    def __call__(self, net, err, x_data, y_data):
         # perturb the weights of each layer randomly and evaluate
         # we need a copy of the initial layers weights
         temperature = self.temperature
@@ -81,19 +91,16 @@ __kernel void add_rand(__global const ${dtype}* a,
             for e in evs:
                 e.wait()
             # get the new output using these weights
-            offset = cltypes.int(net.batch_size * net.layers[0].input_width * idx)
             buf = x_data
             for candidate, l in zip(candidates, net.layers):
-                buf = l.forward(buf, offset, weights=candidate.data)
-                offset = cltypes.int(0)
+                buf = l.forward(buf, weights=candidate.data)
             output = net.layers[-1].output
-            candidate_err = self.loss.cpu(y_data, output, idx)
+            candidate_err = self.loss.cpu(y_data, output)
             if candidate_err == np.nan:
                 continue
             err_delta = err - candidate_err
-            accept = candidate_err < err  or np.exp(err_delta / temperature) - np.random.rand() > 0
+            accept = candidate_err < err or np.exp(err_delta / temperature) - np.random.rand() > 0
             # accept the candidate solution
-
             if accept:
                 # print(f"Accepting {candidate_err} over {err},{'worse' if err_delta < 0 else 'better'}")
                 err = candidate_err

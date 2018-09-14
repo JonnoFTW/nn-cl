@@ -1,6 +1,9 @@
+import sys
+
 import pyopencl as cl
-from multiprocessing.dummy import Value
-from pyopencl import cltypes, CommandQueue, array
+import numpy as np
+from mako.template import Template
+from pyopencl import cltypes, CommandQueue, array, Program
 from nncl.initializer import Initializer, GlorotUniformInitializer, ZeroInitializer
 from nncl.util import get_type, get_type_repl
 
@@ -12,6 +15,7 @@ dtype_str = get_type_repl()
 
 class Layer:
     name = "AbstractLayer"
+    layer_fname = None
 
     def __init__(self, ctx, queue: CommandQueue, units,
                  weight_initializer: Initializer = GlorotUniformInitializer,
@@ -28,13 +32,28 @@ class Layer:
         self.batch_size = batch_size
         self.dtype_str = dtype_str
         self.src = ""
-        with open(f'../nncl/cl/activations/{self.activation}.cl', 'r') as infile:
-            self.src += infile.read() + "\n"
-        self.make_prog()
+        for fname in [f'../nncl/cl/activations/{self.activation}.cl',
+                      self.layer_fname,
+                      '../nncl/cl/layers/gradient.cl']:
+            with open(fname, 'r') as infile:
+                self.src += infile.read() + "\n"
+        self.src = Template(self.src).render(
+            activation='activation_' + self.activation,
+            derivative='derivative_' + self.activation,
+            dtype=self.dtype_str
+        )
+        try:
+            self.prog = Program(self.ctx, self.src).build()
+        except cl.cffi_cl.RuntimeError as e:
+            # print(self.src, flush=True)
+            print(e, file=sys.stderr, flush=True)
+            exit(1)
+        self.forward_krnl = self.prog.layer_forward
+
+        self._grad_krnl = self.prog.get_gradients
 
     def init(self, input_width):
         self.input_width = input_width
-
         if not isinstance(self.weight_initializer, Initializer):
             weight_initializer = self.weight_initializer(self.input_width, self.units)
         if not isinstance(self.bias_initializer, Initializer):
@@ -46,8 +65,6 @@ class Layer:
         # should probably make this 2d so it can have dimensions (output_width, batch_size)
         self.output = array.zeros(self.queue, (self.batch_size, self.units), dtype=dtype)
         self.output_data = self.output.data
-        self.deltas = array.zeros(self.queue, self.units, dtype=dtype)
-        self.errors = array.zeros(self.queue, (self.units, self.batch_size), dtype=dtype)
         self.input_width = cltypes.uint(self.input_width)
         self.output_width = cltypes.uint(self.units)
         self.activation = self.activation
@@ -71,38 +88,32 @@ class Layer:
     def get_output(self):
         return self.output.get()
 
-    def forward(self, input: array.Array, offset, weights=None):
-        return self(input, offset, weights)
+    def forward(self, input: array.Array, weights=None):
+        return self(input, weights)
 
-    def __call__(self, input: array.Array, offset, weights=None) -> array.Array:
+    def __call__(self, input: array.Array, weights=None) -> array.Array:
         if weights is None:
             weights = self.weights.data
         self.forward_krnl(self.queue, (self.batch_size, self.output_width), None,
-                          input,
+                          input.data,
                           weights,
                           self.bias.data,
                           self.output.data,
-                          self.input_width,
-                          offset
+                          self.input_width
                           ).wait()
-        return self.output_data
+        return self.output
 
-    def backward(self,
-                 loss,
-                 x_train: cl.Buffer,
-                 y_true: cl.array,
-                 lr: float,
-                 reg: float):
+    def backward(self, y_errors, lr):
         if not self.is_training:
-            return self.deltas
+            return
+        # just do it ont he cPu lmao
+        # weight deltas are the input to this layer dot grads
+        grads = cl.array.to_device(self.queue, y_errors.T.get().dot(self.inputs))
+        # apply derivative activation to get deltas for weights
+        # and then multiply by learning rate
 
-        # compute
-        #  errors
-        self.backward_krnl(self.queue, (self.output_width, self.batch_size), None,
-                           self.output.data,
-                           self.weights.data,
-                           y_true.data,
-                           self.errors.data,
-                           self.input_width
-                           ).wait()
-        return self.deltas
+        ev = self._grad_krnl(self.queue, (grads.size,), None,
+                             grads.data,
+                             self.weights.data, lr
+                             )
+        return ev

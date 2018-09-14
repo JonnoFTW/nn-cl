@@ -42,15 +42,15 @@ if __name__ == "__main__":
                     activation='relu',
                     batch_size=batch_size)
     # dense_2 = Dense(ctx, queue, units=512, activation='relu', batch_size=batch_size)
-    softmax_3 = Dense(ctx, queue, units=10, batch_size=batch_size, activation='hard_sigmoid')
-    # softmax_3 = Softmax(ctx, queue, units=10, batch_size=batch_size)
+    # softmax_3 = Dense(ctx, queue, units=10, batch_size=batch_size, activation='hard_sigmoid')
+    softmax_3 = Softmax(ctx, queue, units=10, batch_size=batch_size)
     net.add(dense_1)
     # net.add(dense_2)
     net.add(softmax_3)
     net.build()
     net.summary()
     loss = losses.CategoricalCrossentropy(ctx)
-    net.train(epochs=5,
+    net.train(epochs=100,
               loss=loss,
               optimizer=SGD(),
               batch_size=batch_size,
@@ -65,3 +65,5 @@ if __name__ == "__main__":
                   PlotCallback(['batch'], 'Batch Loss', 'Batch No.', 'Loss', True),
                   # PlotCallback(['validation', 'testing'], 'Val/Test Loss', False)
               ])
+
+    input()
