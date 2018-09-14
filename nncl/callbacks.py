@@ -6,9 +6,11 @@ from typing import List
 
 
 class PlotCallback:
-    def __init__(self, fields: List[str], title: str, batch_end):
+    def __init__(self, fields: List[str], title: str, xlabel: str, ylabel: str, batch_end: bool):
         self.fig = plt.figure(title)
         self.ax = self.fig.add_subplot(111, label=title)
+        self.ax.set_xlabel(xlabel)
+        self.ax.set_ylabel(ylabel)
         self.lines = {f: self.ax.plot([], [], label=f.title())[0] for f in fields}
         self.fig.show()
         self.batch_end = batch_end

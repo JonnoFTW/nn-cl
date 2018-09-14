@@ -31,22 +31,9 @@ __kernel void softmax_layer_forward(
     barrier(CLK_GLOBAL_MEM_FENCE);
     // output array now has exponentiated output
     ${dtype} sumExp = 0;
-    for(int i = 0; i < output_width; i++) { // should be a column sum for this batch
-        sumExp += output[batch_id * output_width + i]; // this is wrong
+    for(int i = 0; i < output_width; i++) {
+        sumExp += output[batch_id * output_width + i];
     }
-
-//    printf("unit: %d batch_id: %d exp: %.2f sumExp: %.3f activation: %.3f\n", gid, batch_id, sum, sumExp, sum/sumExp);
-
-    // should probably do this reduction properly
-//    exponents[gid * batch_size + batch_id] = sum;
-//    barrier(CLK_LOCAL_MEM_FENCE);
-//    for(int i = group_size/2; i> 2; i >> 1) {
-//        if(lid < i) {
-//            exponents[lid] += exponents[lid + i];
-//        }
-//        barrier(CLK_LOCAL_MEM_FENCE);
-//    }
-//    barrier(CLK_GLOBAL_MEM_FENCE);
     output[output_idx] = sum / sumExp;
 }
 __kernel void softmax_layer_backward(

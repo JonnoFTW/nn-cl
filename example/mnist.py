@@ -34,24 +34,25 @@ if __name__ == "__main__":
     x_test.shape = (x_test.shape[0], 784)
     y_test = to_one_hot(load_mnist('../data/mnist/t10k-labels-idx1-ubyte'))
 
-    batch_size = 5
+    batch_size = 60
     np.random.seed(0)
     net = nn.Network(ctx=ctx, input_size=784, batch_size=batch_size)
     dense_1 = Dense(ctx, queue,
-                    units=64,
+                    units=128,
                     activation='relu',
                     batch_size=batch_size)
     # dense_2 = Dense(ctx, queue, units=512, activation='relu', batch_size=batch_size)
-    softmax_3 = Softmax(ctx, queue, units=10, batch_size=batch_size)
+    softmax_3 = Dense(ctx, queue, units=10, batch_size=batch_size, activation='hard_sigmoid')
+    # softmax_3 = Softmax(ctx, queue, units=10, batch_size=batch_size)
     net.add(dense_1)
     # net.add(dense_2)
     net.add(softmax_3)
     net.build()
     net.summary()
     loss = losses.CategoricalCrossentropy(ctx)
-    net.train(epochs=1,
+    net.train(epochs=5,
               loss=loss,
-              optimizer=Anneal(queue, loss, max_updates=32),
+              optimizer=SGD(),
               batch_size=batch_size,
               x_train=x_train,
               y_train=y_train,
@@ -59,7 +60,8 @@ if __name__ == "__main__":
               y_test=y_test,
               validation_pct=.1,
               validation_method='cross-validation',
+              shuffle=True,
               callbacks=[
-                  # PlotCallback(['batch'], 'Batch Loss', True),
+                  PlotCallback(['batch'], 'Batch Loss', 'Batch No.', 'Loss', True),
                   # PlotCallback(['validation', 'testing'], 'Val/Test Loss', False)
               ])

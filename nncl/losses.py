@@ -73,8 +73,11 @@ class CategoricalCrossentropy(Loss):
     def cpu(self, y_true, y_pred, idx):
         preds = y_pred.get()
         batch_size, fields = preds.shape
-        y_true_np = y_true[idx * batch_size:idx * batch_size + batch_size].get()
-        return (-((y_true_np * np.log(preds)).sum(axis=1))).mean()
+        y_true_np = y_true[idx * batch_size:idx * batch_size + batch_size]
+        out = (-((y_true_np * np.log(preds)).sum(axis=1)))
+        # for o in zip(out, np.argmax(preds, axis=1),np.argmax(y_true_np,axis=1)):
+        #     print(f"Err: {o[0]} expected: {o[2]} predicted: {o[1]}")
+        return out.mean()
 
     def __call__(self, y_true, y_pred, idx):
         return self.krnl(y_true[idx], y_pred).get()

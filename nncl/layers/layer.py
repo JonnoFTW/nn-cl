@@ -95,6 +95,9 @@ class Layer:
                  reg: float):
         if not self.is_training:
             return self.deltas
+
+        # compute
+        #  errors
         self.backward_krnl(self.queue, (self.output_width, self.batch_size), None,
                            self.output.data,
                            self.weights.data,

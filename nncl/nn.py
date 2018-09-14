@@ -82,7 +82,7 @@ class Network:
                     expected = 1 / (np.exp(-expected) + 1)
                 elif l.activation == 'softmax':
                     exps = np.exp(expected)
-                    expected = exps / exps.sum()
+                    expected = exps / exps.sum(axis=1)[:, None]
                 print("Expected:\n", expected)
                 input_np = output
 
@@ -264,14 +264,17 @@ class Network:
                 idx = cltypes.uint(idx)
                 # idx here is the batch number
                 # copy all of these to the device?
-                output = self.forward(x_train_gpu, idx)
-                # err = loss.cpu(y_train_gpu, output, idx=idx)
-                # losses['batch'].append(err)
+                output = self.forward(x_train_gpu, idx, verbose=False)
+                err = loss.cpu(y_train, output, idx=idx)
+                # err = loss(y_train_gpu, output, idx=idx)
+                losses['batch'].append(err)
                 # print(f"Mean Batch Loss={err}")
-                # optimizer(self, err, x_train_gpu, y_train_gpu, idx)
-                for c in callbacks:
-                    if c.batch_end:
-                        c(losses)
+                optimizer(self, err, x_train_gpu, y_train_gpu, idx)
+                # optimizer(self, err, x_train_gpu, y_train, idx)
+                if idx % 900 == 0:
+                    for c in callbacks:
+                        if c.batch_end:
+                            c(losses)
             # run the network and get error for the validation set
             # this should be a single batch of size validation_samples
             # will need to allocate specific validation arrays
